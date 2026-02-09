@@ -10,6 +10,9 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 
+import dotenv from 'dotenv';
+dotenv.config();
+
 const sessions = new Map();
 
 function generateToken() {
@@ -49,7 +52,7 @@ app.use(express.json());
 
 io.on('connection', (socket) => {
     console.log('Client connected:', socket.id);
-    
+
     socket.on('disconnect', () => {
         console.log('Client disconnected:', socket.id);
     });
@@ -59,6 +62,9 @@ io.on('connection', (socket) => {
 const pool = new pg.Pool({
     connectionString: process.env.DATABASE_URL,
     options: "-c timezone=Asia/Kolkata",
+    ssl: {
+        rejectUnauthorized: false  // ← Yeh add karo
+    }
 });
 
 pool.on('connect', (client) => {
@@ -70,7 +76,7 @@ async function normalizeSortOrder() {
     try {
         // Ensure FAMILY/RELATIVE types have sort_order = 0
         await pool.query(`UPDATE visits SET sort_order = 0 WHERE type IN ('FAMILY', 'RELATIVE')`);
-        
+
         // Renumber non-pinned waiting patients for today with sequential sort_order
         await pool.query(`
             WITH ranked AS (
@@ -150,25 +156,25 @@ app.post('/api/plan-inquiry', async (req, res) => {
 app.post('/api/login', (req, res) => {
     try {
         const { username, password, mobile } = req.body;
-        
+
         if (!username || !password || !mobile) {
             return res.status(400).json({ success: false, error: 'All fields are required' });
         }
-        
+
         const credPath = path.join(__dirname, 'secretcred.json');
         const credData = JSON.parse(fs.readFileSync(credPath, 'utf8'));
-        
-        const user = credData.users.find(u => 
+
+        const user = credData.users.find(u =>
             u.username.toUpperCase() === username.toUpperCase() &&
             u.password === password &&
             u.mobile === mobile
         );
-        
+
         if (user) {
             const token = generateToken();
             sessions.set(token, { role: user.role.toUpperCase(), username: user.username, mobile: user.mobile });
-            res.json({ 
-                success: true, 
+            res.json({
+                success: true,
                 role: user.role.toUpperCase(),
                 username: user.username,
                 token: token
@@ -200,7 +206,7 @@ app.get('/api/display/queue', async (req, res) => {
              WHERE DATE(v.created_at) = CURRENT_DATE 
              ORDER BY v.created_at ASC`
         );
-        
+
         const data = patientsRes.rows.map(p => ({
             id: p.id,
             name: p.name,
@@ -215,7 +221,7 @@ app.get('/api/display/queue', async (req, res) => {
             inTime: p.in_time,
             sortOrder: p.sort_order || 0
         }));
-        
+
         res.json(data);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -278,7 +284,7 @@ app.get('/api/patients', requireAuth, async (req, res) => {
              ORDER BY v.created_at ASC`
         );
         const messagesRes = await pool.query('SELECT * FROM messages ORDER BY timestamp ASC');
-        
+
         const patients = patientsRes.rows;
         const messages = messagesRes.rows;
 
@@ -298,7 +304,7 @@ app.get('/api/patients', requireAuth, async (req, res) => {
                 patientId: m.patient_id
             }))
         }));
-        
+
         res.json(data);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -374,19 +380,19 @@ app.get('/api/patients/lookup/:mobile', requireAuth, async (req, res) => {
 app.get('/api/patients/:patientId/history', requireAuth, async (req, res) => {
     try {
         const { patientId } = req.params;
-        
+
         // First get patient details from patient table
         const patientResult = await pool.query(
             'SELECT id, name, age, gender, city, mobile, created_at FROM patient WHERE id = $1',
             [patientId]
         );
-        
+
         if (patientResult.rows.length === 0) {
             return res.status(404).json({ error: 'Patient not found' });
         }
-        
+
         const patient = patientResult.rows[0];
-        
+
         // Get all PREVIOUS visits for this patient (exclude today's visit), ordered by date (newest first)
         const visitsResult = await pool.query(
             `SELECT id, queue_id, name, age, gender, category, type, city, mobile, status, 
@@ -397,7 +403,7 @@ app.get('/api/patients/:patientId/history', requireAuth, async (req, res) => {
              ORDER BY created_at DESC`,
             [patientId]
         );
-        
+
         // Format dates for frontend
         const visits = visitsResult.rows.map(v => ({
             ...v,
@@ -407,7 +413,7 @@ app.get('/api/patients/:patientId/history', requireAuth, async (req, res) => {
             queueId: v.queue_id,
             followUpDate: v.follow_up_date
         }));
-        
+
         res.json({
             patient: {
                 id: patient.id,
@@ -431,45 +437,45 @@ app.get('/api/patients/:patientId/history', requireAuth, async (req, res) => {
 app.get('/api/patients/report', requireAuth, async (req, res) => {
     try {
         const { name, city, mobile, startDate, endDate } = req.query;
-        
+
         let query = 'SELECT * FROM visits WHERE 1=1';
         const params = [];
         let paramIndex = 1;
-        
+
         if (name) {
             query += ` AND LOWER(name) LIKE LOWER($${paramIndex})`;
             params.push(`%${name}%`);
             paramIndex++;
         }
-        
+
         if (city) {
             query += ` AND LOWER(city) LIKE LOWER($${paramIndex})`;
             params.push(`%${city}%`);
             paramIndex++;
         }
-        
+
         if (mobile) {
             query += ` AND mobile LIKE $${paramIndex}`;
             params.push(`%${mobile}%`);
             paramIndex++;
         }
-        
+
         if (startDate) {
             query += ` AND DATE(created_at) >= $${paramIndex}`;
             params.push(startDate);
             paramIndex++;
         }
-        
+
         if (endDate) {
             query += ` AND DATE(created_at) <= $${paramIndex}`;
             params.push(endDate);
             paramIndex++;
         }
-        
+
         query += ' ORDER BY created_at DESC LIMIT 150';
-        
+
         const result = await pool.query(query, params);
-        
+
         const data = result.rows.map(p => ({
             ...p,
             queueId: p.queue_id,
@@ -480,7 +486,7 @@ app.get('/api/patients/report', requireAuth, async (req, res) => {
             hasUnreadAlert: !!p.has_unread_alert,
             followUpDate: p.follow_up_date
         }));
-        
+
         res.json(data);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -495,9 +501,9 @@ app.post('/api/patients', requireAuth, async (req, res) => {
         console.log('Adding patient:', p.id);
         const createdAt = toISOSafe(p.createdAt, true);
         const inTime = toISOSafe(p.inTime, true);
-        
+
         await client.query('BEGIN');
-        
+
         // For PATIENT category, calculate queue_id atomically within transaction
         let queueId = 0;
         if (p.category === 'PATIENT') {
@@ -507,17 +513,17 @@ app.post('/api/patients', requireAuth, async (req, res) => {
                  WHERE DATE(created_at) = CURRENT_DATE AND category = 'PATIENT'
                  FOR UPDATE`
             );
-            const maxQueueId = lockResult.rows.length > 0 
-                ? Math.max(...lockResult.rows.map(r => r.queue_id)) 
+            const maxQueueId = lockResult.rows.length > 0
+                ? Math.max(...lockResult.rows.map(r => r.queue_id))
                 : 0;
             queueId = maxQueueId + 1;
         }
-        
+
         // For FAMILY/RELATIVE types, sort_order = 0 (pinned at top)
         // For other types, sort_order = max + 1 (new at bottom of queue)
         const isPinned = p.type === 'FAMILY' || p.type === 'RELATIVE';
         let sortOrder = 0;
-        
+
         if (!isPinned) {
             // Get max sort_order for non-pinned waiting patients today
             const maxResult = await client.query(
@@ -528,7 +534,7 @@ app.post('/api/patients', requireAuth, async (req, res) => {
             );
             sortOrder = (maxResult.rows[0].max_order || 0) + 1;
         }
-        
+
         // First, check if patient exists in patient table or create new
         let patientId = null;
         if (p.mobile && p.mobile.trim() !== '') {
@@ -555,17 +561,17 @@ app.post('/api/patients', requireAuth, async (req, res) => {
             );
             patientId = newPatient.rows[0].id;
         }
-        
+
         const result = await client.query(
             'INSERT INTO visits (id, patient_id, queue_id, name, age, gender, category, type, city, mobile, status, created_at, in_time, has_unread_alert, sort_order) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING queue_id',
             [p.id, patientId, queueId, p.name, p.age, p.gender, p.category, p.type, p.city, p.mobile, p.status, createdAt, inTime, p.hasUnreadAlert, sortOrder]
         );
-        
+
         await client.query('COMMIT');
         console.log('Insert result:', result.rowCount, 'Queue ID:', result.rows[0].queue_id, 'Patient ID:', patientId);
-        
+
         io.emit('patient:add', { patientId: p.id, queueId: result.rows[0].queue_id });
-        
+
         res.status(201).json({ success: true, queueId: result.rows[0].queue_id });
     } catch (err) {
         await client.query('ROLLBACK');
@@ -581,7 +587,7 @@ app.patch('/api/patients/:id', requireAuth, async (req, res) => {
     try {
         const { id } = req.params;
         const updates = req.body;
-        
+
         // Map camelCase to snake_case for PG and convert timestamps safely
         const camelToSnake = {
             queueId: 'queue_id',
@@ -595,7 +601,7 @@ app.patch('/api/patients/:id', requireAuth, async (req, res) => {
         };
         const timestampFields = ['createdAt', 'inTime', 'outTime'];
         const jsonbFields = ['complaints', 'diagnosis', 'prescription'];
-        
+
         const pgUpdates = {};
         Object.keys(updates).forEach(key => {
             const pgKey = camelToSnake[key] || key;
@@ -619,12 +625,12 @@ app.patch('/api/patients/:id', requireAuth, async (req, res) => {
 
         const keys = Object.keys(pgUpdates);
         const values = Object.values(pgUpdates);
-        
+
         if (keys.length === 0) return res.status(400).json({ error: 'No updates provided' });
 
         const setClause = keys.map((k, i) => `${k} = $${i + 1}`).join(', ');
         await pool.query(`UPDATE visits SET ${setClause} WHERE id = $${keys.length + 1}`, [...values, id]);
-        
+
         // Save tags for autocomplete suggestions
         if (updates.complaints && Array.isArray(updates.complaints)) {
             for (const tag of updates.complaints) {
@@ -652,9 +658,9 @@ app.patch('/api/patients/:id', requireAuth, async (req, res) => {
                 }
             }
         }
-        
+
         io.emit('patient:update', { patientId: id, updates });
-        
+
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -667,9 +673,9 @@ app.post('/api/patients/:id/status', requireAuth, async (req, res) => {
     try {
         const { id } = req.params;
         const { status, outTime } = req.body;
-        
+
         await client.query('BEGIN');
-        
+
         // Get current patient
         const patientRes = await client.query(
             'SELECT status, sort_order, type FROM visits WHERE id = $1', [id]
@@ -677,11 +683,11 @@ app.post('/api/patients/:id/status', requireAuth, async (req, res) => {
         if (patientRes.rows.length === 0) {
             throw new Error('Patient not found');
         }
-        
+
         const patient = patientRes.rows[0];
         const oldStatus = patient.status;
         const isPinned = patient.type === 'FAMILY' || patient.type === 'RELATIVE';
-        
+
         // If moving FROM WAITING to OPD/COMPLETED, renumber remaining waiting cards
         if (oldStatus === 'WAITING' && status !== 'WAITING' && !isPinned && patient.sort_order > 0) {
             await client.query(
@@ -693,7 +699,7 @@ app.post('/api/patients/:id/status', requireAuth, async (req, res) => {
                 [patient.sort_order]
             );
         }
-        
+
         // If moving TO WAITING (from OPD), assign sort_order = 1 and shift others
         let newSortOrder = 0;
         if (status === 'WAITING' && oldStatus !== 'WAITING' && !isPinned) {
@@ -706,7 +712,7 @@ app.post('/api/patients/:id/status', requireAuth, async (req, res) => {
             );
             newSortOrder = 1;
         }
-        
+
         // Update patient status
         const updateFields = { status };
         // Always set out_time when completing, clear when moving back
@@ -717,17 +723,17 @@ app.post('/api/patients/:id/status', requireAuth, async (req, res) => {
         }
         if (status === 'WAITING' && !isPinned) updateFields.sort_order = newSortOrder;
         if (status !== 'WAITING') updateFields.sort_order = 0;
-        
+
         const keys = Object.keys(updateFields);
         const values = Object.values(updateFields);
         const setClause = keys.map((k, i) => `${k} = $${i + 1}`).join(', ');
-        
+
         await client.query(`UPDATE visits SET ${setClause} WHERE id = $${keys.length + 1}`, [...values, id]);
-        
+
         await client.query('COMMIT');
-        
+
         io.emit('patient:update', { patientId: id, updates: { status } });
-        
+
         res.json({ success: true });
     } catch (err) {
         await client.query('ROLLBACK');
@@ -743,9 +749,9 @@ app.post('/api/patients/:id/reorder', requireAuth, async (req, res) => {
     try {
         const { id } = req.params;
         const { direction } = req.body; // 'up' or 'down'
-        
+
         await client.query('BEGIN');
-        
+
         // Get current patient
         const patientRes = await client.query(
             'SELECT sort_order, type FROM visits WHERE id = $1', [id]
@@ -753,15 +759,15 @@ app.post('/api/patients/:id/reorder', requireAuth, async (req, res) => {
         if (patientRes.rows.length === 0) {
             throw new Error('Patient not found');
         }
-        
+
         const patient = patientRes.rows[0];
         const currentOrder = patient.sort_order;
-        
+
         // Cannot reorder pinned types
         if (patient.type === 'FAMILY' || patient.type === 'RELATIVE') {
             return res.json({ success: false, message: 'Cannot reorder FAMILY/RELATIVE patients' });
         }
-        
+
         // Find nearest neighbor patient to swap with (sort_order may not be consecutive)
         let adjacentRes;
         if (direction === 'up') {
@@ -785,22 +791,22 @@ app.post('/api/patients/:id/reorder', requireAuth, async (req, res) => {
                 [currentOrder]
             );
         }
-        
+
         if (adjacentRes.rows.length === 0) {
             return res.json({ success: false, message: 'No patient to swap with' });
         }
-        
+
         const adjacentId = adjacentRes.rows[0].id;
         const adjacentOrder = adjacentRes.rows[0].sort_order;
-        
+
         // Swap sort orders
         await client.query('UPDATE visits SET sort_order = $1 WHERE id = $2', [adjacentOrder, id]);
         await client.query('UPDATE visits SET sort_order = $1 WHERE id = $2', [currentOrder, adjacentId]);
-        
+
         await client.query('COMMIT');
-        
+
         io.emit('patient:reorder', { patientId: id, direction });
-        
+
         res.json({ success: true });
     } catch (err) {
         await client.query('ROLLBACK');
@@ -816,9 +822,9 @@ app.post('/api/patients/:id/move-to', requireAuth, async (req, res) => {
     try {
         const { id } = req.params;
         const { targetId } = req.body;
-        
+
         await client.query('BEGIN');
-        
+
         // Get source patient
         const sourceRes = await client.query(
             'SELECT sort_order, type, status FROM visits WHERE id = $1', [id]
@@ -827,7 +833,7 @@ app.post('/api/patients/:id/move-to', requireAuth, async (req, res) => {
             throw new Error('Source patient not found');
         }
         const source = sourceRes.rows[0];
-        
+
         // Cannot reorder pinned types or non-waiting
         if (source.type === 'FAMILY' || source.type === 'RELATIVE') {
             return res.json({ success: false, message: 'Cannot reorder FAMILY/RELATIVE patients' });
@@ -835,7 +841,7 @@ app.post('/api/patients/:id/move-to', requireAuth, async (req, res) => {
         if (source.status !== 'WAITING') {
             return res.json({ success: false, message: 'Can only reorder waiting patients' });
         }
-        
+
         // Get target patient
         const targetRes = await client.query(
             'SELECT sort_order, type FROM visits WHERE id = $1', [targetId]
@@ -844,19 +850,19 @@ app.post('/api/patients/:id/move-to', requireAuth, async (req, res) => {
             throw new Error('Target patient not found');
         }
         const target = targetRes.rows[0];
-        
+
         // Cannot drop on pinned types
         if (target.type === 'FAMILY' || target.type === 'RELATIVE') {
             return res.json({ success: false, message: 'Cannot drop on FAMILY/RELATIVE patients' });
         }
-        
+
         const sourceOrder = source.sort_order;
         const targetOrder = target.sort_order;
-        
+
         if (sourceOrder === targetOrder) {
             return res.json({ success: true }); // No change needed
         }
-        
+
         if (sourceOrder < targetOrder) {
             // Moving down: shift items between source+1 and target up by 1
             await client.query(
@@ -878,14 +884,14 @@ app.post('/api/patients/:id/move-to', requireAuth, async (req, res) => {
                 [targetOrder, sourceOrder]
             );
         }
-        
+
         // Set source to target position
         await client.query('UPDATE visits SET sort_order = $1 WHERE id = $2', [targetOrder, id]);
-        
+
         await client.query('COMMIT');
-        
+
         io.emit('patient:reorder', { patientId: id });
-        
+
         res.json({ success: true });
     } catch (err) {
         await client.query('ROLLBACK');
@@ -899,9 +905,9 @@ app.post('/api/patients/:id/move-to', requireAuth, async (req, res) => {
 app.delete('/api/patients/:id', requireAuth, async (req, res) => {
     try {
         await pool.query('DELETE FROM visits WHERE id = $1', [req.params.id]);
-        
+
         io.emit('patient:delete', { patientId: req.params.id });
-        
+
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -918,9 +924,9 @@ app.post('/api/patients/:id/messages', requireAuth, async (req, res) => {
             [m.id, id, m.text, m.sender, m.timestamp]
         );
         await pool.query('UPDATE visits SET has_unread_alert = TRUE WHERE id = $1', [id]);
-        
+
         io.emit('message:new', { patientId: id, message: m });
-        
+
         res.status(201).json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -942,13 +948,13 @@ app.get('/api/events', requireAuth, async (req, res) => {
         const { year, month } = req.query;
         let query = 'SELECT * FROM events';
         let params = [];
-        
+
         if (year && month) {
             query += ' WHERE EXTRACT(YEAR FROM event_date) = $1 AND EXTRACT(MONTH FROM event_date) = $2';
             params = [year, month];
         }
         query += ' ORDER BY event_date ASC, event_time ASC';
-        
+
         const result = await pool.query(query, params);
         const events = result.rows.map(e => ({
             id: e.id,
@@ -988,7 +994,7 @@ app.post('/api/events', requireAuth, async (req, res) => {
             createdBy: e.created_by,
             createdAt: e.created_at
         };
-        
+
         io.emit('event:add', event);
         res.status(201).json(event);
     } catch (err) {
@@ -1022,7 +1028,7 @@ app.put('/api/events/:id', requireAuth, async (req, res) => {
             createdBy: e.created_by,
             createdAt: e.created_at
         };
-        
+
         io.emit('event:update', event);
         res.json(event);
     } catch (err) {
@@ -1035,7 +1041,7 @@ app.delete('/api/events/:id', requireAuth, async (req, res) => {
     try {
         const { id } = req.params;
         await pool.query('DELETE FROM events WHERE id = $1', [id]);
-        
+
         io.emit('event:delete', { eventId: parseInt(id) });
         res.json({ success: true });
     } catch (err) {
@@ -1115,8 +1121,8 @@ app.get('/api/statistics', requireAuth, async (req, res) => {
         );
         const lastWeekCount = parseInt(lastWeekRes.rows[0].count) || 0;
 
-        const weeklyChange = lastWeekCount > 0 
-            ? Math.round(((thisWeekCount - lastWeekCount) / lastWeekCount) * 100) 
+        const weeklyChange = lastWeekCount > 0
+            ? Math.round(((thisWeekCount - lastWeekCount) / lastWeekCount) * 100)
             : (thisWeekCount > 0 ? 100 : 0);
 
         // Gender distribution
@@ -1175,12 +1181,12 @@ app.get('/api/statistics', requireAuth, async (req, res) => {
              LIMIT 1`,
             [startOfMonth.toISOString().split('T')[0]]
         );
-        const busiestDay = busiestDayRes.rows[0] 
-            ? { 
-                day: busiestDayRes.rows[0].day_name.trim(), 
+        const busiestDay = busiestDayRes.rows[0]
+            ? {
+                day: busiestDayRes.rows[0].day_name.trim(),
                 count: parseInt(busiestDayRes.rows[0].count),
                 date: busiestDayRes.rows[0].specific_date
-              }
+            }
             : null;
 
         // New vs Returning patients (this month)
@@ -1207,8 +1213,8 @@ app.get('/api/statistics', requireAuth, async (req, res) => {
             [lastMonthStart.toISOString().split('T')[0], lastMonthEnd.toISOString().split('T')[0]]
         );
         const lastMonthCount = parseInt(lastMonthRes.rows[0].count) || 0;
-        const monthlyChange = lastMonthCount > 0 
-            ? Math.round(((monthCount - lastMonthCount) / lastMonthCount) * 100) 
+        const monthlyChange = lastMonthCount > 0
+            ? Math.round(((monthCount - lastMonthCount) / lastMonthCount) * 100)
             : (monthCount > 0 ? 100 : 0);
 
         res.json({
@@ -1280,10 +1286,10 @@ app.post('/api/opd-status', requireAuth, (req, res) => {
             isPaused: isPaused || false,
             pauseReason: isPaused ? (pauseReason || '') : ''
         };
-        
+
         // Broadcast OPD status change to all connected clients
         io.emit('opd:status-change', opdStatus);
-        
+
         console.log('OPD Status changed:', opdStatus);
         res.json({ success: true, ...opdStatus });
     } catch (err) {
