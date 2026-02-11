@@ -45,6 +45,15 @@ const io = new Server(httpServer);
 // app.use(cors());
 app.use(express.json());
 
+app.get('/api/env-check', (req, res) => {
+  res.json({
+    databaseUrl: process.env.DATABASE_URL || null,
+    nodeEnv: process.env.NODE_ENV || null,
+    port: process.env.PORT || null
+  });
+});
+
+
 io.on('connection', (socket) => {
     console.log('Client connected:', socket.id);
 
@@ -56,9 +65,8 @@ io.on('connection', (socket) => {
 // Move API routes BEFORE static file serving
 const pool = new pg.Pool({
     connectionString: process.env.DATABASE_URL,
-    options: "-c timezone=Asia/Kolkata",
     ssl: {
-        rejectUnauthorized: false  // ← Yeh add karo
+        rejectUnauthorized: false
     }
 });
 
@@ -94,7 +102,7 @@ async function normalizeSortOrder() {
 }
 
 // Run normalization on startup
-normalizeSortOrder();
+// normalizeSortOrder();
 
 // Aggressive Cache-Control for Development
 app.use((req, res, next) => {
