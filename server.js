@@ -40,14 +40,9 @@ const isProduction = fs.existsSync(distPath);
 
 const app = express();
 const httpServer = createServer(app);
-const io = new Server(httpServer, {
-    cors: {
-        origin: "*",
-        methods: ["GET", "POST", "PATCH", "DELETE"]
-    }
-});
+const io = new Server(httpServer);
 
-app.use(cors());
+// app.use(cors());
 app.use(express.json());
 
 io.on('connection', (socket) => {
