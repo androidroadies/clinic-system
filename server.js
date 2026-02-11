@@ -102,14 +102,7 @@ async function normalizeSortOrder() {
 }
 
 // Run normalization on startup
-(async () => {
-  try {
-    await normalizeSortOrder();
-  } catch (err) {
-    console.error("Startup normalization failed:", err.message);
-  }
-})();
-
+normalizeSortOrder();
 
 // Aggressive Cache-Control for Development
 app.use((req, res, next) => {
@@ -1332,12 +1325,7 @@ if (isProduction) {
     });
 }
 
-if (!process.env.PORT) {
-  console.error("PORT not defined by Passenger");
-  process.exit(1);
-}
-
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT;
 httpServer.listen(PORT, () => {
     console.log(`Server running on port ${PORT} with Socket.IO`);
 });
