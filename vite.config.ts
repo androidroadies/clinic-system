@@ -11,16 +11,16 @@ export default defineConfig(({ mode }) => {
         allowedHosts: true,
         proxy: {
           '/api': {
-            target: 'http://localhost:3001',
+            target: JSON.stringify(env.BACKEND_URL),
             changeOrigin: true,
           },
           '/socket.io': {
-            target: 'http://localhost:3001',
+            target: JSON.stringify(env.BACKEND_URL),
             changeOrigin: true,
             ws: true,
           },
           '/site': {
-            target: 'http://localhost:3001',
+            target: JSON.stringify(env.BACKEND_URL),
             changeOrigin: true,
           },
         },
