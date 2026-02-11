@@ -11,16 +11,16 @@ export default defineConfig(({ mode }) => {
         allowedHosts: true,
         proxy: {
           '/api': {
-            target: env.BACKEND_URL,
+            target: env.VITE_BACKEND_URL,
             changeOrigin: true,
           },
           '/socket.io': {
-            target: env.BACKEND_URL,
+            target: env.VITE_BACKEND_URL,
             changeOrigin: true,
             ws: true,
           },
           '/site': {
-            target: env.BACKEND_URL,
+            target: env.VITE_BACKEND_URL,
             changeOrigin: true,
           },
         },
