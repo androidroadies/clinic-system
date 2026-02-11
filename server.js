@@ -102,7 +102,14 @@ async function normalizeSortOrder() {
 }
 
 // Run normalization on startup
-// normalizeSortOrder();
+(async () => {
+  try {
+    await normalizeSortOrder();
+  } catch (err) {
+    console.error("Startup normalization failed:", err.message);
+  }
+})();
+
 
 // Aggressive Cache-Control for Development
 app.use((req, res, next) => {
@@ -1323,6 +1330,11 @@ if (isProduction) {
         res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
         res.sendFile(path.join(distPath, 'index.html'));
     });
+}
+
+if (!process.env.PORT) {
+  console.error("PORT not defined by Passenger");
+  process.exit(1);
 }
 
 const PORT = process.env.PORT || 3001;
