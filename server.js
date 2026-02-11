@@ -1318,6 +1318,6 @@ if (isProduction) {
 }
 
 const PORT = process.env.PORT || 3001;
-httpServer.listen(PORT, '0.0.0.0', () => {
+httpServer.listen(PORT, () => {
     console.log(`Server running on port ${PORT} with Socket.IO`);
 });
