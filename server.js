@@ -40,17 +40,23 @@ const isProduction = fs.existsSync(distPath);
 
 const app = express();
 const httpServer = createServer(app);
-const io = new Server(httpServer);
+const io = new Server(httpServer, {
+    cors: {
+        origin: "*",
+        methods: ["GET", "POST"]
+    },
+    path: '/socket.io/'
+});
 
-// app.use(cors());
+app.use(cors());
 app.use(express.json());
 
 app.get('/api/env-check', (req, res) => {
-  res.json({
-    databaseUrl: process.env.DATABASE_URL || null,
-    nodeEnv: process.env.NODE_ENV || null,
-    port: process.env.PORT || null
-  });
+    res.json({
+        databaseUrl: process.env.DATABASE_URL || null,
+        nodeEnv: process.env.NODE_ENV || null,
+        port: process.env.PORT || null
+    });
 });
 
 
