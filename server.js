@@ -140,7 +140,7 @@ app.get('/api/app-settings', async (req, res) => {
         res.json(result.rows[0]);
     } catch (err) {
         console.error('App settings error:', err);
-        res.status(500).json({ error: 'Failed to fetch app settings' });
+        res.status(500).json({ error: `Failed to fetch app settings. ${err}` });
     }
 });
 
