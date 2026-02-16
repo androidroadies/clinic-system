@@ -50,7 +50,7 @@ const io = new Server(httpServer, {
     transports: ["polling", "websocket"]
 });
 
-// app.use(cors());
+app.use(cors());
 app.use(express.json());
 
 app.get('/api/env-check', (req, res) => {
