@@ -270,7 +270,7 @@ const App: React.FC = () => {
 
   // Socket.IO connection for real-time sync
   useEffect(() => {
-    const socket = io("https://clinic.vebasatrading.com", {
+    const socket = io("wss://clinic.vebasatrading.com", {
       transports: ['websocket', 'polling']
     });
     socketRef.current = socket;
