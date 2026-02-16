@@ -42,11 +42,12 @@ const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
     cors: {
-        origin: ["https://clinic.vebastrading.com", "http://localhost:5173"], // add your dev origin too
+        origin: ["https://clinic.vebasatrading.com", "http://localhost:5173"],
         methods: ["GET", "POST"],
         credentials: true
     },
-    transports: ["websocket"]
+    allowEIO3: true,
+    transports: ["polling", "websocket"]
 });
 
 // app.use(cors());
@@ -140,7 +141,7 @@ app.get('/api/app-settings', async (req, res) => {
         res.json(result.rows[0]);
     } catch (err) {
         console.error('App settings error:', err);
-        res.status(500).json({ error: `Failed to fetch app settings. ${err}` });
+        res.status(500).json({ error: 'Failed to fetch app settings' });
     }
 });
 
