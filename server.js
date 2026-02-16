@@ -42,13 +42,14 @@ const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
     cors: {
-        origin: "*",
-        methods: ["GET", "POST"]
+        origin: ["https://clinic.vebastrading.com", "http://localhost:5173"], // add your dev origin too
+        methods: ["GET", "POST"],
+        credentials: true
     },
-    path: '/socket.io/'
+    transports: ["websocket"]
 });
 
-app.use(cors());
+// app.use(cors());
 app.use(express.json());
 
 app.get('/api/env-check', (req, res) => {
